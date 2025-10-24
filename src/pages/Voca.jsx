@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import * as XLSX from "xlsx";
 
-const TEMPLATE_URL = "/templates/master.xlsx";
+const TEMPLATE_URL = `${process.env.PUBLIC_URL}/templates/master.xlsx`;
 
 /* =====================
    Design Tokens (P0)
@@ -115,21 +115,40 @@ const cellStyle = (h, density, jpScale, readingScale) => {
   return base;
 };
 
-// 날짜 헬퍼 (Excel serial or YYYY-MM-DD)
+/* =====================
+   날짜 헬퍼
+   ===================== */
+// Excel serial, JS Date, 또는 YYYY-MM-DD 문자열을 모두 YYYY-MM-DD로 통일
 const toDateStr = (v) => {
-  if (!v) return "";
-  const s = String(v).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const n = Number(s);
+  if (v == null || v === "") return "";
+
+  // 이미 YYYY-MM-DD 문자열이면 그대로
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim())) {
+    return v.trim();
+  }
+
+  // JS Date 객체
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    const y = v.getUTCFullYear();
+    const m = String(v.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(v.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  // Excel serial 숫자/문자
+  const n = Number(v);
   if (!Number.isNaN(n) && n > 0 && n < 60000) {
-    const base = Date.UTC(1899, 11, 30);
+    const base = Date.UTC(1899, 11, 30); // 1899-12-30
     const ms = base + Math.floor(n) * 86400000;
     const d = new Date(ms);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
-      d.getUTCDate()
-    ).padStart(2, "0")}`;
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(d.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
   }
-  return s;
+
+  // 그 외: 문자열로 반환
+  return String(v);
 };
 
 export default function Voca() {
@@ -253,7 +272,7 @@ export default function Voca() {
   // === 집중 모드 키보드 조작 & 포커스 제거 ===
   useEffect(() => {
     if (!isFocusMode) return;
-    // 포커스 강제 해제(텍스트 캐럿/버튼 포커스 제거)
+    // 포커스 강제 해제
     if (document.activeElement && document.activeElement.blur) {
       document.activeElement.blur();
     }
@@ -277,13 +296,11 @@ export default function Voca() {
 
   // 집중 모드 진입 시 시작 위치 결정
   const enterFocusFrom = useCallback(() => {
-    // 필터 적용 후의 시작 인덱스
     const safeStart =
       selectedIdx >= 0 && selectedIdx < filteredRows.length ? selectedIdx : 0;
     setCurrentIdx(safeStart);
     setHideMeaning(false);
     setIsFocusMode(true);
-    // 즉시 포커스 제거
     setTimeout(() => {
       if (document.activeElement && document.activeElement.blur) {
         document.activeElement.blur();
@@ -505,7 +522,7 @@ export default function Voca() {
             const meaning = (meaningField && r[meaningField]) || r.meaning_ko || r.meaning || "";
             const pos = (posField && r[posField]) || r.pos || "";
             const jlpt = (jlptField && r[jlptField]) || r.jlpt || r.jlpt_level || "";
-            
+
             return (
               <>
                 <div style={jpStyle}>{String(jp)}</div>
@@ -612,17 +629,22 @@ export default function Voca() {
                 onMouseLeave={(e) =>
                   (e.currentTarget.style.background = i % 2 ? "#FCFCFD" : "#FFFFFF")
                 }
-                onClick={() => setSelectedIdx(i)}              // ★ 시작점 기억
-                onDoubleClick={() => {                         // ★ 더블클릭 = 즉시 집중모드 진입
+                onClick={() => setSelectedIdx(i)}
+                onDoubleClick={() => {
                   setSelectedIdx(i);
                   enterFocusFrom();
                 }}
               >
-                {visibleHeaders.map((h) => (
-                  <div key={h} style={cellStyle(h, density, jpScale, readingScale)}>
-                    {String(r[h] ?? "")}
-                  </div>
-                ))}
+                {visibleHeaders.map((h) => {
+                  const isDateCol = dateField && norm(h) === norm(dateField);
+                  const raw = r[h] ?? "";
+                  const shown = isDateCol ? toDateStr(raw) : String(raw);
+                  return (
+                    <div key={h} style={cellStyle(h, density, jpScale, readingScale)}>
+                      {shown}
+                    </div>
+                  );
+                })}
               </div>
             ))}
           </div>
